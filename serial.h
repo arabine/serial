@@ -13,7 +13,6 @@ extern "C" {
 #endif
 
 
-#include <config.h>
 #include <stdint.h>
 
 #ifdef USE_WINDOWS_OS
