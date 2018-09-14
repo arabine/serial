@@ -308,13 +308,14 @@ int serial_open(const char *port)
 	HANDLE hCom = NULL;
 
 	if( port[0] != '\\' ) {
-		_snprintf(full_path, sizeof(full_path) - 1, "\\\\.\\%s", port);
+        _snprintf(full_path, sizeof(full_path) - 1, "\\\\.\\%s", port);
 		port = full_path;
 	}
 
 	hCom = CreateFileA(port, GENERIC_WRITE | GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
 
 	if( !hCom || hCom == INVALID_HANDLE_VALUE ) {
+        printf("serial error %d\r\n", GetLastError());
 		fd = -1;
 	} else {
 		fd = (int)hCom;
@@ -342,5 +343,5 @@ int serial_close(int fd)
 #else
 	close(fd);
 #endif
-	return 0;
+    return -1;
 }
