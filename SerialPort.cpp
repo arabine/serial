@@ -322,15 +322,19 @@ std::int32_t SerialPort::Open(const std::string &ident, const std::string &param
                     serial_setup(mFd, baudrate);
                     mLastSuccess = "Setup serial port " + portName + " success at " + std::to_string(baudrate) + " bauds";
                 } catch (const std::exception & e) {
-                    mLastError = "Bad device parameters (expected integers): " +  params + e.what();
+                    mLastError = "Bad device parameters (expected integers): " +  params + ". Error: " + e.what();
                 }
             }
             else
             {
-                mLastError = "Serial port parameter needs four comma separated parameters, eg: 9600,8,N,1";
+                mLastError = "Serial port parameter needs four comma separated parameters, eg: 9600,8,N,1. Got: " + params;
                 retCode = cPortBadParameters;
             }
         }
+    }
+    else
+    {
+        mLastError = "Cannot find COM port with identifier: " + ident + ", please verify the parameters or device not connected";
     }
 
     return retCode;
