@@ -10,7 +10,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#ifdef USE_WINDOWS_OS
+#else
 #include <unistd.h>     // for read/write
+#endif
 #include <string.h>
 
 #include "serial.h"
