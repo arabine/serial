@@ -54,6 +54,7 @@ public:
 
     std::int32_t Open(const std::string &ident, const std::string &params);
     void Close();
+    std::int32_t Write(const uint8_t *data, uint32_t size);
     std::int32_t Write(const std::string &data);
     std::int32_t Read(std::string &data, int32_t timeout_sec);
     bool IsOpen() const;

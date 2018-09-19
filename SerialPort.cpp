@@ -9,8 +9,8 @@
 #include <regex>
 #include <iostream>
 
-#include <windows.h>
-#include <setupapi.h>
+#include <Windows.h>
+#include <SetupAPI.h>
 #include <devpkey.h>
 #include <tchar.h>
 #include <initguid.h>
@@ -26,16 +26,48 @@
 
 DEFINE_GUID(GUID_DEVCLASS_PORTS, 0x4D36E978, 0xE325, 0x11CE, 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 );
 
+
+struct FtdiDevice
+{
+    FtdiDevice()
+        : location(0U)
+        , comPort(-1)
+    {
+
+    }
+
+    FtdiDevice(unsigned long loc, int com, const std::string &ser, const std::string &des)
+        : location(loc)
+        , comPort(com)
+        , serialNumber(ser)
+        , description(des)
+    {
+
+    }
+
+    unsigned long location;
+    int comPort;
+    std::string serialNumber;
+    std::string description;
+};
+
+static std::vector<FtdiDevice> gFtdiDeviceList; // list for FTDI chips
 static std::vector<SerialInfos> gSerialList; // System list of com ports
+
 
 std::string getDeviceProperty(HDEVINFO devInfo, PSP_DEVINFO_DATA devData, DWORD property)
 {
     DWORD buffSize = 0;
+    std::string result;
     SetupDiGetDeviceRegistryProperty(devInfo, devData, property, nullptr, nullptr, 0, & buffSize);
-    BYTE* buff = new BYTE[buffSize];
-    SetupDiGetDeviceRegistryProperty(devInfo, devData, property, nullptr, buff, buffSize, nullptr);
-    std::string result = Util::ToString(std::wstring(reinterpret_cast<wchar_t*>(buff)));
-    delete [] buff;
+
+    if (buffSize > 0)
+    {
+        BYTE* buff = new BYTE[buffSize];
+        SetupDiGetDeviceRegistryProperty(devInfo, devData, property, nullptr, buff, buffSize, nullptr);
+        result = Util::ToString(std::wstring(reinterpret_cast<wchar_t*>(buff)));
+        delete [] buff;
+    }
     return result;
 }
 
@@ -161,7 +193,7 @@ std::string getRegKeyValue(HKEY key, LPCTSTR property)
 #define		CP210x_SUCCESS						0x00
 
 // Prototype found in CP210x header file
-typedef int (WINAPI *CP210x_GetDeviceSerialNumber)(
+typedef int (WINAPI *CP210x_GetDeviceSerialNumber_t)(
         const HANDLE cyHandle,
         LPVOID	lpSerialNumber,
         LPBYTE	lpbLength,
@@ -181,8 +213,8 @@ void GetCP210xSerialNumber(SerialInfos &entry)
     {
         HMODULE hModule = LoadLibrary(TEXT("CP210xManufacturing.dll"));
 
-        CP210x_GetDeviceSerialNumber getSerial =
-                reinterpret_cast<CP210x_GetDeviceSerialNumber>(GetProcAddress(hModule, "CP210x_GetDeviceSerialNumber"));
+        CP210x_GetDeviceSerialNumber_t getSerial =
+                reinterpret_cast<CP210x_GetDeviceSerialNumber_t>(GetProcAddress(hModule, "CP210x_GetDeviceSerialNumber"));
 
         char	lpSerialNumber[1024];
         BYTE	lpbLength;
@@ -201,6 +233,147 @@ void GetCP210xSerialNumber(SerialInfos &entry)
     }
 }
 
+#define FTID_SUCCESS						0
+typedef PVOID	FT_HANDLE;
+typedef ULONG	FT_STATUS;
+//
+// Device status
+//
+enum {
+    FT_OK,
+    FT_INVALID_HANDLE,
+    FT_DEVICE_NOT_FOUND,
+    FT_DEVICE_NOT_OPENED,
+    FT_IO_ERROR,
+    FT_INSUFFICIENT_RESOURCES,
+    FT_INVALID_PARAMETER,
+    FT_INVALID_BAUD_RATE,
+
+    FT_DEVICE_NOT_OPENED_FOR_ERASE,
+    FT_DEVICE_NOT_OPENED_FOR_WRITE,
+    FT_FAILED_TO_WRITE_DEVICE,
+    FT_EEPROM_READ_FAILED,
+    FT_EEPROM_WRITE_FAILED,
+    FT_EEPROM_ERASE_FAILED,
+    FT_EEPROM_NOT_PRESENT,
+    FT_EEPROM_NOT_PROGRAMMED,
+    FT_INVALID_ARGS,
+    FT_NOT_SUPPORTED,
+    FT_OTHER_ERROR,
+    FT_DEVICE_LIST_NOT_READY,
+};
+
+typedef unsigned long (*FTID_GetNumDevices_t)(unsigned long * Devices);
+typedef unsigned long (*FTID_GetDeviceSerialNumber_t)(unsigned long DeviceIndex, char * SerialBuffer, unsigned long SerialBufferLength);
+typedef unsigned long (*FTID_GetDeviceDescription_t)(unsigned long DeviceIndex, char * DescriptionBuffer, unsigned long DescriptionBufferLength);
+typedef unsigned long (*FTID_GetDeviceLocationID_t)(unsigned long DeviceIndex, unsigned long * LocationIDBuffer);
+
+
+typedef FT_STATUS (*FT_Open_t)(
+    int deviceNumber,
+    FT_HANDLE *pHandle
+    );
+
+typedef FT_STATUS (*FT_GetComPortNumber_t)(
+    FT_HANDLE ftHandle,
+    LPLONG	lpdwComPortNumber
+    );
+
+typedef FT_STATUS (*FT_Close_t)(
+    FT_HANDLE ftHandle
+    );
+
+// \HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\FTDIBUS\Enum
+/*
+sprintf(comPortRegPath, "%s%s%s%s", "SYSTEM\\\\CurrentControlSet\\\\Enum\\\\USB\\\\", USB_DEV_VID_PID, devSerialNumber, "\\\\Device Parameters");
+
+registryAccess = RegOpenKeyEx(HKEY_LOCAL_MACHINE, comPortRegPath, 0, KEY_READ, &registryKey);
+
+usbVCOMportNameSize = sizeof(usbVCOMportName);
+
+registryAccess = RegQueryValueEx(registryKey, "PortName", NULL, NULL, (LPBYTE)usbVCOMportName, &usbVCOMportNameSize);
+
+RegCloseKey(registryKey);
+ */
+void ListFTDIDevices()
+{
+    HMODULE hModule = LoadLibrary(TEXT("FTChipID.dll"));
+    HMODULE hFTDModule = LoadLibrary(TEXT("ftd2xx.dll"));
+
+    if (hModule && hFTDModule)
+    {
+
+        FTID_GetNumDevices_t getNumDevices = reinterpret_cast<FTID_GetNumDevices_t>(GetProcAddress(hModule, "FTID_GetNumDevices"));
+        FTID_GetDeviceSerialNumber_t getSerial = reinterpret_cast<FTID_GetDeviceSerialNumber_t>(GetProcAddress(hModule, "FTID_GetDeviceSerialNumber"));
+        FTID_GetDeviceDescription_t getDesc = reinterpret_cast<FTID_GetDeviceDescription_t>(GetProcAddress(hModule, "FTID_GetDeviceDescription"));
+        FTID_GetDeviceLocationID_t getLoc = reinterpret_cast<FTID_GetDeviceLocationID_t>(GetProcAddress(hModule, "FTID_GetDeviceLocationID"));
+
+        FT_Open_t ftdOpen = reinterpret_cast<FT_Open_t>(GetProcAddress(hFTDModule, "FT_Open"));
+        FT_GetComPortNumber_t ftdGetPortNumber = reinterpret_cast<FT_GetComPortNumber_t>(GetProcAddress(hFTDModule, "FT_GetComPortNumber"));
+        FT_Close_t ftdClose = reinterpret_cast<FT_Close_t>(GetProcAddress(hFTDModule, "FT_Close"));
+
+        unsigned long NbDevices = 0U;
+        char	lpSerialNumber[1024];
+        char	lpDesc[1024];
+        unsigned long	lpLoc;
+
+        gFtdiDeviceList.clear();
+
+        if (getNumDevices(&NbDevices) == FTID_SUCCESS)
+        {
+            for (unsigned long i = 0U; i < NbDevices; i++)
+            {
+                std::string serial;
+                std::string desc;
+                // Here we save locally some data
+                // FTDI DLL seems to goes over the buffer
+                // So it may generate memory corruption
+                getSerial(i, lpSerialNumber, 256);
+                serial.assign(lpSerialNumber);
+                getDesc(i, lpDesc, 256);
+                desc.assign(lpDesc);
+                getLoc(i, &lpLoc);
+
+                FT_HANDLE fthandle;
+                FT_STATUS res;
+                LONG COMPORT;
+
+                res = ftdOpen(0, &fthandle);
+
+                if(res == FT_OK){
+
+                    res = ftdGetPortNumber(fthandle, &COMPORT);
+
+                    if ((res == FT_OK) && (COMPORT != -1))
+                    {
+                        gFtdiDeviceList.push_back(FtdiDevice(lpLoc, COMPORT, serial, desc));
+
+                        std::cout << "FTDI: " << serial << " " << desc << " " << COMPORT << std::endl;
+                    }
+                }
+                ftdClose(fthandle);
+            }
+        }
+        FreeLibrary(hModule);
+        FreeLibrary(hFTDModule);
+    }
+}
+
+void GetFTDISerialNumber(SerialInfos &entry)
+{
+    for (auto const &ftdi : gFtdiDeviceList)
+    {
+        std::string name = entry.portName;
+        name.erase(0, 3); // erase the "COMxx" part
+        int comPort = Util::FromString<int>(name);
+        if (ftdi.comPort == comPort)
+        {
+            entry.isFtdi = true;
+            entry.serial = ftdi.serialNumber;
+        }
+    }
+}
+
 #include "Registry.hpp"
 
 void SerialPort::EnumeratePorts()
@@ -210,6 +383,8 @@ void SerialPort::EnumeratePorts()
     const auto INVALID_HANDLE = reinterpret_cast<HANDLE>(-1);
 
     gSerialList.clear();
+
+    ListFTDIDevices();
 
     if (INVALID_HANDLE != DeviceInfoSet)
     {
@@ -240,13 +415,22 @@ void SerialPort::EnumeratePorts()
                 entry.productId = matcher[2].str();
             }
 
+            GetCP210xSerialNumber(entry);
+            GetFTDISerialNumber(entry);
+
             std::cout << entry.friendName  << "\r\n"
                       << "    " << entry.physName << "\r\n"
                       << "    " << entry.enumName << "\r\n"
                       << "    " << entry.hardwareIDs << " ==> VendorID: " << entry.vendorId << " ProductId: " << entry.productId << "\r\n"
                       << "    " << entry.portName << std::endl;
-
-            GetCP210xSerialNumber(entry);
+            if (entry.isFtdi)
+            {
+                std::cout << "    FTDI chip with serial: " << entry.serial << std::endl;
+            }
+            if (entry.isCypress)
+            {
+                std::cout << "    Cypress chip with serial: " << entry.serial << std::endl;
+            }
 
             gSerialList.push_back(entry);
         }
@@ -337,12 +521,22 @@ std::int32_t SerialPort::Open(const std::string &ident, const std::string &param
         mLastError = "Cannot find COM port with identifier: " + ident + ", please verify the parameters or device not connected";
     }
 
+    if (retCode != cPortAssociated)
+    {
+        Close();
+    }
+
     return retCode;
 }
 
 void SerialPort::Close()
 {
     mFd = serial_close(mFd);
+}
+
+int32_t SerialPort::Write(const uint8_t *data, std::uint32_t size)
+{
+    return Write(std::string(reinterpret_cast<const char*>(data), size));
 }
 
 int32_t SerialPort::Write(const std::string &data)
