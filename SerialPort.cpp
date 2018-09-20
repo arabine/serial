@@ -572,6 +572,10 @@ int32_t SerialPort::Read(std::string &data, std::int32_t timeout_sec)
             data.assign(mBuffer, static_cast<std::uint32_t>(ret));
             retCode = cPortReadSuccess;
         }
+        else
+        {
+            retCode = cPortReadTimeout;
+        }
     }
     else
     {

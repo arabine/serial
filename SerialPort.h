@@ -38,6 +38,7 @@ struct SerialInfos
 class SerialPort
 {
 public:
+    static const std::int32_t cPortReadTimeout      = -8;
     static const std::int32_t cPortReadError        = -7;
     static const std::int32_t cPortWriteError       = -6;
     static const std::int32_t cPortBadParameters    = -5;
