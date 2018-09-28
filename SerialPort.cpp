@@ -9,17 +9,13 @@
 #include <regex>
 #include <iostream>
 
-#include <Windows.h>
-#include <SetupAPI.h>
+#include <windows.h>
+#include <setupapi.h>
 #include <devpkey.h>
 #include <tchar.h>
 #include <initguid.h>
 #include <devpropdef.h>
 
-//typedef std::vector<UINT> CPortsArray;
-//typedef std::wstring String;
-//typedef std::vector<String> CNamesArray;
-//typedef std::vector<std::pair<UINT, String> > CPortAndNamesArray;
 
 
 //static CPortsArray ports;
@@ -27,31 +23,7 @@
 DEFINE_GUID(GUID_DEVCLASS_PORTS, 0x4D36E978, 0xE325, 0x11CE, 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 );
 
 
-struct FtdiDevice
-{
-    FtdiDevice()
-        : location(0U)
-        , comPort(-1)
-    {
 
-    }
-
-    FtdiDevice(unsigned long loc, int com, const std::string &ser, const std::string &des)
-        : location(loc)
-        , comPort(com)
-        , serialNumber(ser)
-        , description(des)
-    {
-
-    }
-
-    unsigned long location;
-    int comPort;
-    std::string serialNumber;
-    std::string description;
-};
-
-static std::vector<FtdiDevice> gFtdiDeviceList; // list for FTDI chips
 static std::vector<SerialInfos> gSerialList; // System list of com ports
 
 
@@ -90,105 +62,6 @@ std::string getRegKeyValue(HKEY key, LPCTSTR property)
     }
     return result;
 }
-
-//bool IsNumeric(_In_z_ LPCSTR pszString, _In_ bool bIgnoreColon) noexcept
-//{
-//  const size_t nLen = strlen(pszString);
-//  if (nLen == 0)
-//    return false;
-
-//  //What will be the return value from this function (assume the best)
-//  bool bNumeric = true;
-
-//  for (size_t i=0; i<nLen && bNumeric; i++)
-//  {
-//    if (bIgnoreColon && (pszString[i] == ':'))
-//      bNumeric = true;
-//    else
-//      bNumeric = (isdigit(static_cast<int>(pszString[i])) != 0);
-//  }
-
-//  return bNumeric;
-//}
-
-//bool IsNumeric(_In_z_ LPCWSTR pszString, _In_ bool bIgnoreColon) noexcept
-//{
-//  const size_t nLen = wcslen(pszString);
-//  if (nLen == 0)
-//    return false;
-
-//  //What will be the return value from this function (assume the best)
-//  bool bNumeric = true;
-
-//  for (size_t i=0; i<nLen && bNumeric; i++)
-//  {
-//    if (bIgnoreColon && (pszString[i] == L':'))
-//      bNumeric = true;
-//    else
-//       bNumeric = (iswdigit(pszString[i]) != 0);
-//  }
-
-//  return bNumeric;
-//}
-
-//bool QuerySerialPorts(CPortsArray& ports)
-//{
-//  //Make sure we clear out any elements which may already be in the array
-//  ports.clear();
-
-//  //Use QueryDosDevice to look for all devices of the form COMx. Since QueryDosDevice does
-//  //not consistently report the required size of buffer, lets start with a reasonable buffer size
-//  //of 4096 characters and go from there
-//  DWORD nChars = 4096;
-//  bool bWantStop = false;
-//  while (nChars && !bWantStop)
-//  {
-//    std::vector<TCHAR> devices;
-//    devices.resize(nChars);
-
-//    const DWORD dwChars = QueryDosDevice(nullptr, &(devices[0]), nChars);
-//    if (dwChars == 0)
-//    {
-//      const DWORD dwError = GetLastError();
-//      if (dwError == ERROR_INSUFFICIENT_BUFFER)
-//      {
-//        //Expand the buffer and  loop around again
-//        nChars *= 2;
-//      }
-//      else
-//        return false;
-//    }
-//    else
-//    {
-//      bWantStop = true;
-
-//      size_t i = 0;
-//      while (devices[i] != _T('\0'))
-//      {
-//        //Get the current device name
-//        LPCTSTR pszCurrentDevice = &(devices[i]);
-
-//        //If it looks like "COMX" then
-//        //add it to the array which will be returned
-//        const size_t nLen = _tcslen(pszCurrentDevice);
-//        if (nLen > 3)
-//        {
-//          if ((_tcsnicmp(pszCurrentDevice, _T("COM"), 3) == 0) && IsNumeric(&(pszCurrentDevice[3]), false))
-//          {
-//            //Work out the port number
-//            const unsigned int nPort = static_cast<unsigned int>(_ttoi(&pszCurrentDevice[3]));
-//            ports.push_back(nPort);
-//          }
-//        }
-
-//        //Go to next device name
-//        i += (nLen + 1);
-//      }
-//    }
-//  }
-
-//  return true;
-//}
 
 #define		CP210x_SUCCESS						0x00
 
@@ -233,149 +106,25 @@ void GetCP210xSerialNumber(SerialInfos &entry)
     }
 }
 
-#define FTID_SUCCESS						0
-typedef PVOID	FT_HANDLE;
-typedef ULONG	FT_STATUS;
-//
-// Device status
-//
-enum {
-    FT_OK,
-    FT_INVALID_HANDLE,
-    FT_DEVICE_NOT_FOUND,
-    FT_DEVICE_NOT_OPENED,
-    FT_IO_ERROR,
-    FT_INSUFFICIENT_RESOURCES,
-    FT_INVALID_PARAMETER,
-    FT_INVALID_BAUD_RATE,
-
-    FT_DEVICE_NOT_OPENED_FOR_ERASE,
-    FT_DEVICE_NOT_OPENED_FOR_WRITE,
-    FT_FAILED_TO_WRITE_DEVICE,
-    FT_EEPROM_READ_FAILED,
-    FT_EEPROM_WRITE_FAILED,
-    FT_EEPROM_ERASE_FAILED,
-    FT_EEPROM_NOT_PRESENT,
-    FT_EEPROM_NOT_PROGRAMMED,
-    FT_INVALID_ARGS,
-    FT_NOT_SUPPORTED,
-    FT_OTHER_ERROR,
-    FT_DEVICE_LIST_NOT_READY,
-};
-
-typedef unsigned long (*FTID_GetNumDevices_t)(unsigned long * Devices);
-typedef unsigned long (*FTID_GetDeviceSerialNumber_t)(unsigned long DeviceIndex, char * SerialBuffer, unsigned long SerialBufferLength);
-typedef unsigned long (*FTID_GetDeviceDescription_t)(unsigned long DeviceIndex, char * DescriptionBuffer, unsigned long DescriptionBufferLength);
-typedef unsigned long (*FTID_GetDeviceLocationID_t)(unsigned long DeviceIndex, unsigned long * LocationIDBuffer);
-
-
-typedef FT_STATUS (*FT_Open_t)(
-    int deviceNumber,
-    FT_HANDLE *pHandle
-    );
-
-typedef FT_STATUS (*FT_GetComPortNumber_t)(
-    FT_HANDLE ftHandle,
-    LPLONG	lpdwComPortNumber
-    );
-
-typedef FT_STATUS (*FT_Close_t)(
-    FT_HANDLE ftHandle
-    );
-
-// \HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\FTDIBUS\Enum
-/*
-sprintf(comPortRegPath, "%s%s%s%s", "SYSTEM\\\\CurrentControlSet\\\\Enum\\\\USB\\\\", USB_DEV_VID_PID, devSerialNumber, "\\\\Device Parameters");
-
-registryAccess = RegOpenKeyEx(HKEY_LOCAL_MACHINE, comPortRegPath, 0, KEY_READ, &registryKey);
-
-usbVCOMportNameSize = sizeof(usbVCOMportName);
-
-registryAccess = RegQueryValueEx(registryKey, "PortName", NULL, NULL, (LPBYTE)usbVCOMportName, &usbVCOMportNameSize);
-
-RegCloseKey(registryKey);
- */
-void ListFTDIDevices()
-{
-    HMODULE hModule = LoadLibrary(TEXT("FTChipID.dll"));
-    HMODULE hFTDModule = LoadLibrary(TEXT("ftd2xx.dll"));
-
-    if (hModule && hFTDModule)
-    {
-
-        FTID_GetNumDevices_t getNumDevices = reinterpret_cast<FTID_GetNumDevices_t>(GetProcAddress(hModule, "FTID_GetNumDevices"));
-        FTID_GetDeviceSerialNumber_t getSerial = reinterpret_cast<FTID_GetDeviceSerialNumber_t>(GetProcAddress(hModule, "FTID_GetDeviceSerialNumber"));
-        FTID_GetDeviceDescription_t getDesc = reinterpret_cast<FTID_GetDeviceDescription_t>(GetProcAddress(hModule, "FTID_GetDeviceDescription"));
-        FTID_GetDeviceLocationID_t getLoc = reinterpret_cast<FTID_GetDeviceLocationID_t>(GetProcAddress(hModule, "FTID_GetDeviceLocationID"));
-
-        FT_Open_t ftdOpen = reinterpret_cast<FT_Open_t>(GetProcAddress(hFTDModule, "FT_Open"));
-        FT_GetComPortNumber_t ftdGetPortNumber = reinterpret_cast<FT_GetComPortNumber_t>(GetProcAddress(hFTDModule, "FT_GetComPortNumber"));
-        FT_Close_t ftdClose = reinterpret_cast<FT_Close_t>(GetProcAddress(hFTDModule, "FT_Close"));
-
-        unsigned long NbDevices = 0U;
-        char	lpSerialNumber[1024];
-        char	lpDesc[1024];
-        unsigned long	lpLoc;
-
-        gFtdiDeviceList.clear();
-
-        if (getNumDevices(&NbDevices) == FTID_SUCCESS)
-        {
-            for (unsigned long i = 0U; i < NbDevices; i++)
-            {
-                std::string serial;
-                std::string desc;
-                // Here we save locally some data
-                // FTDI DLL seems to goes over the buffer
-                // So it may generate memory corruption
-                getSerial(i, lpSerialNumber, 256);
-                serial.assign(lpSerialNumber);
-                getDesc(i, lpDesc, 256);
-                desc.assign(lpDesc);
-                getLoc(i, &lpLoc);
-
-                FT_HANDLE fthandle;
-                FT_STATUS res;
-                LONG COMPORT;
-
-                res = ftdOpen(0, &fthandle);
-
-                if(res == FT_OK){
-
-                    res = ftdGetPortNumber(fthandle, &COMPORT);
-
-                    if ((res == FT_OK) && (COMPORT != -1))
-                    {
-                        gFtdiDeviceList.push_back(FtdiDevice(lpLoc, COMPORT, serial, desc));
-
-                        std::cout << "FTDI: " << serial << " " << desc << " " << COMPORT << std::endl;
-                    }
-                }
-                ftdClose(fthandle);
-            }
-        }
-        FreeLibrary(hModule);
-        FreeLibrary(hFTDModule);
-    }
-}
 
 void GetFTDISerialNumber(SerialInfos &entry)
 {
-    for (auto const &ftdi : gFtdiDeviceList)
+    // FTDIBUS\VID_0403+PID_6001+FTGXU599A\0000
+
+    std::regex pattern(R"(FTDIBUS\\VID_(\d\d\d\d)\+PID_(\d\d\d\d)\+(\w+)\\(.+))");
+    std::smatch matcher;
+    std::string subMatch;
+
+    std::regex_search(entry.pnpId, matcher, pattern);
+
+    if (matcher.size() >= 4)
     {
-        std::string name = entry.portName;
-        name.erase(0, 3); // erase the "COMxx" part
-        int comPort = Util::FromString<int>(name);
-        if (ftdi.comPort == comPort)
-        {
-            entry.isFtdi = true;
-            entry.serial = ftdi.serialNumber;
-        }
+        entry.serial = matcher[3].str();
+        entry.isFtdi = true;
     }
 }
 
-#include "Registry.hpp"
-
+// Sources of information: NodeJS serialport project, Qt serialport
 void SerialPort::EnumeratePorts()
 {
     HDEVINFO DeviceInfoSet = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, nullptr, nullptr, DIGCF_PRESENT);
@@ -383,8 +132,6 @@ void SerialPort::EnumeratePorts()
     const auto INVALID_HANDLE = reinterpret_cast<HANDLE>(-1);
 
     gSerialList.clear();
-
-    ListFTDIDevices();
 
     if (INVALID_HANDLE != DeviceInfoSet)
     {
@@ -394,10 +141,18 @@ void SerialPort::EnumeratePorts()
         {
             SerialInfos entry;
 
+            WCHAR szBuffer[1024];
+            DWORD dwSize = 1024;
+            DWORD realSize = 0;
+            SetupDiGetDeviceInstanceId(DeviceInfoSet, &devInfoData, &szBuffer[0], dwSize, &realSize);
+            szBuffer[realSize] = '\0';
+            entry.pnpId = Util::ToString(std::wstring(szBuffer));
+
             entry.friendName  = getDeviceProperty(DeviceInfoSet, &devInfoData, SPDRP_FRIENDLYNAME);
             entry.physName = getDeviceProperty(DeviceInfoSet, &devInfoData, SPDRP_PHYSICAL_DEVICE_OBJECT_NAME);
             entry.enumName = getDeviceProperty(DeviceInfoSet, &devInfoData, SPDRP_ENUMERATOR_NAME);
             entry.hardwareIDs = Util::ToUpper(getDeviceProperty(DeviceInfoSet, &devInfoData, SPDRP_HARDWAREID));
+            entry.manufacturer = getDeviceProperty(DeviceInfoSet, &devInfoData, SPDRP_MFG);
 
             HKEY devKey = SetupDiOpenDevRegKey(DeviceInfoSet, &devInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ);
             entry.portName = getRegKeyValue(devKey, TEXT("PortName"));
@@ -421,6 +176,8 @@ void SerialPort::EnumeratePorts()
             std::cout << entry.friendName  << "\r\n"
                       << "    " << entry.physName << "\r\n"
                       << "    " << entry.enumName << "\r\n"
+                      << "    " << entry.pnpId << "\r\n"
+                      << "    " << entry.manufacturer << "\r\n"
                       << "    " << entry.hardwareIDs << " ==> VendorID: " << entry.vendorId << " ProductId: " << entry.productId << "\r\n"
                       << "    " << entry.portName << std::endl;
             if (entry.isFtdi)
@@ -441,6 +198,8 @@ void SerialPort::EnumeratePorts()
         SetupDiDestroyDeviceInfoList(DeviceInfoSet);
     }
 }
+
+
 
 int32_t SerialPort::AssociatePort(const std::string &ident, std::string &portName)
 {

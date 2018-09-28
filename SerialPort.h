@@ -21,6 +21,8 @@ struct SerialInfos
     std::string portName;
     std::string vendorId;
     std::string productId;
+    std::string manufacturer;
+    std::string pnpId;
     std::string serial;
     bool isFtdi;
     bool isCypress;
