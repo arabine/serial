@@ -82,7 +82,7 @@ void GetCP210xSerialNumber(SerialInfos &entry)
 
     hCom = CreateFileA(full_path, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
 
-    if ((hCom != nullptr) && (reinterpret_cast<std::uint32_t>(hCom) != reinterpret_cast<std::uint32_t>(INVALID_HANDLE_VALUE)))
+    if ((hCom != nullptr) && (reinterpret_cast<std::uint32_t>(hCom) != static_cast<std::uint32_t>(0xFFFFFFFFUL)))
     {
         HMODULE hModule = LoadLibrary(TEXT("CP210xManufacturing.dll"));
 
