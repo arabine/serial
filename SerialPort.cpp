@@ -199,7 +199,10 @@ void SerialPort::EnumeratePorts()
     }
 }
 
-
+std::vector<SerialInfos> SerialPort::GetList()
+{
+    return gSerialList;
+}
 
 int32_t SerialPort::AssociatePort(const std::string &ident, std::string &portName)
 {
