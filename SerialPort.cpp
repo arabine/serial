@@ -9,6 +9,12 @@
 #include <regex>
 #include <iostream>
 
+
+static std::vector<SerialInfos> gSerialList; // System list of com ports
+
+
+#ifdef USE_WINDOWS_OS
+
 #include <windows.h>
 #include <setupapi.h>
 #include <devpkey.h>
@@ -17,14 +23,9 @@
 #include <devpropdef.h>
 
 
-
 //static CPortsArray ports;
 
 DEFINE_GUID(GUID_DEVCLASS_PORTS, 0x4D36E978, 0xE325, 0x11CE, 0xBF, 0xC1, 0x08, 0x00, 0x2B, 0xE1, 0x03, 0x18 );
-
-
-
-static std::vector<SerialInfos> gSerialList; // System list of com ports
 
 
 std::string getDeviceProperty(HDEVINFO devInfo, PSP_DEVINFO_DATA devData, DWORD property)
@@ -123,10 +124,111 @@ void GetFTDISerialNumber(SerialInfos &entry)
         entry.isFtdi = true;
     }
 }
+#endif
+
+
+#ifdef USE_UNIX_OS
+#include <stdlib.h>
+#include <dirent.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#include <linux/serial.h>
+
+
+static std::string get_driver(const std::string& tty)
+{
+    struct stat st;
+    std::string devicedir = tty;
+
+    // Append '/device' to the tty-path
+    devicedir += "/device";
+
+    // Stat the devicedir and handle it if it is a symlink
+    if (lstat(devicedir.c_str(), &st)==0 && S_ISLNK(st.st_mode))
+    {
+        char buffer[1024];
+        memset(buffer, 0, sizeof(buffer));
+
+        // Append '/driver' and return basename of the target
+        devicedir += "/driver";
+
+        if (readlink(devicedir.c_str(), buffer, sizeof(buffer)) > 0)
+        {
+            return basename(buffer);
+        }
+    }
+    return "";
+}
+
+static bool IsRealDevice(const SerialInfos &entry)
+{
+    bool realDevice = false;
+    struct serial_struct serinfo;
+
+    // serial8250-devices must be probe to check for validity
+    if (entry.physName == "serial8250")
+    {
+        // Try to open the device
+        int fd = open(entry.portName.c_str(), O_RDWR | O_NONBLOCK | O_NOCTTY);
+
+        if (fd >= 0)
+        {
+            // Get serial_info
+            if (ioctl(fd, TIOCGSERIAL, &serinfo)==0)
+            {
+                // If device type is no PORT_UNKNOWN we accept the port
+                if (serinfo.type != PORT_UNKNOWN)
+                {
+                    realDevice = true;
+                }
+            }
+            close(fd);
+        }
+    }
+    else
+    {
+        // Add other case test if we discover other dummy serial devices
+        realDevice = true;
+    }
+
+    return realDevice;
+}
+
+static void RegisterComPort(const std::string& dir)
+{
+    SerialInfos entry;
+
+    // Get the driver the device is using
+    entry.physName = get_driver(dir);
+
+    // Skip devices without a driver
+    if (entry.physName.size() > 0)
+    {
+        entry.portName = std::string("/dev/") + basename(dir.c_str());
+
+        if (IsRealDevice(entry))
+        {
+            std::cout << "Found serial port: " << entry.physName << "(" << entry.portName << ")\r\n" << std::endl;
+            gSerialList.push_back(entry);
+        }
+    }
+}
+
+
+#endif
+
 
 // Sources of information: NodeJS serialport project, Qt serialport
 void SerialPort::EnumeratePorts()
 {
+
+#ifdef USE_WINDOWS_OS
     HDEVINFO DeviceInfoSet = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, nullptr, nullptr, DIGCF_PRESENT);
 
     const auto INVALID_HANDLE = reinterpret_cast<HANDLE>(-1);
@@ -196,8 +298,44 @@ void SerialPort::EnumeratePorts()
     if (DeviceInfoSet)
     {
         SetupDiDestroyDeviceInfoList(DeviceInfoSet);
+    }    
+
+#endif
+
+#ifdef USE_UNIX_OS
+    int n;
+    struct dirent **namelist;
+
+    const char* sysdir = "/sys/class/tty/";
+
+    // Scan through /sys/class/tty - it contains all tty-devices in the system
+    n = scandir(sysdir, &namelist, nullptr, nullptr);
+    if (n < 0)
+    {
+        perror("scandir");
     }
+    else
+    {
+        while (n--)
+        {
+            if (strcmp(namelist[n]->d_name,"..") && strcmp(namelist[n]->d_name,"."))
+            {
+                // Construct full absolute file path
+                std::string devicedir = sysdir;
+                devicedir += namelist[n]->d_name;
+
+                // Register the device
+                RegisterComPort(devicedir);
+            }
+            free(namelist[n]);
+        }
+        free(namelist);
+    }
+
+#endif
 }
+
+
 
 std::vector<SerialInfos> SerialPort::GetList()
 {
