@@ -214,7 +214,6 @@ static void RegisterComPort(const std::string& dir)
 
         if (IsRealDevice(entry))
         {
-            std::cout << "Found serial port: " << entry.physName << "(" << entry.portName << ")\r\n" << std::endl;
             gSerialList.push_back(entry);
         }
     }
@@ -357,7 +356,7 @@ int32_t SerialPort::AssociatePort(const std::string &ident, std::string &portNam
                 retCode = cPortAssociated;
                 p.associated = true;
                 portName = p.portName;
-                std::cout << "Associated serial device: " << ident << " port name: " << portName << std::endl;
+              //  std::cout << "Associated serial device: " << ident << " port name: " << portName << std::endl;
             }
             else
             {
