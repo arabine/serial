@@ -64,6 +64,8 @@ public:
     std::string GetLastError();
     std::string GetLastSuccess();
 
+    int GetHandle() { return mFd; }
+
     static void EnumeratePorts();
     static std::int32_t AssociatePort(const std::string &ident, std::string &portName);
     static std::vector<SerialInfos> GetList();
