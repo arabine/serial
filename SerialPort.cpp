@@ -135,6 +135,7 @@ void GetFTDISerialNumber(SerialInfos &entry)
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
+#include <libgen.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <sys/ioctl.h>
