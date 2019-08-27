@@ -211,7 +211,7 @@ static void RegisterComPort(const std::string& dir)
     // Skip devices without a driver
     if (entry.physName.size() > 0)
     {
-        entry.portName = std::string("/dev/") + basename(dir.c_str());
+        entry.portName = std::string("/dev/") + dir;
 
         if (IsRealDevice(entry))
         {
