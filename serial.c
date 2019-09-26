@@ -64,6 +64,12 @@ int serial_setup(int fd, unsigned long speed)
 		case 9600:
 		    baud = B9600;
 		    break;
+		case 19200:
+		    baud = B19200;
+		    break;
+		case 38400:
+		    baud = B38400;
+		    break;
 		case 115200:
 			baud = B115200;
 			break;
