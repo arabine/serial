@@ -83,7 +83,7 @@ void GetCP210xSerialNumber(SerialInfos &entry)
 
     hCom = CreateFileA(full_path, GENERIC_WRITE | GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
 
-    if ((hCom != nullptr) && (reinterpret_cast<std::uint32_t>(hCom) != static_cast<std::uint32_t>(0xFFFFFFFFUL)))
+    if ((hCom != nullptr) && (reinterpret_cast<std::uint64_t>(hCom) != static_cast<std::uint64_t>(-1)))
     {
         HMODULE hModule = LoadLibrary(TEXT("CP210xManufacturing.dll"));
 
@@ -135,6 +135,7 @@ void GetFTDISerialNumber(SerialInfos &entry)
 #include <sys/stat.h>
 #include <unistd.h>
 #include <string.h>
+#include <libgen.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <sys/ioctl.h>
@@ -210,7 +211,7 @@ static void RegisterComPort(const std::string& dir)
     // Skip devices without a driver
     if (entry.physName.size() > 0)
     {
-        entry.portName = std::string("/dev/") + basename(dir.c_str());
+        entry.portName = std::string("/dev/") + dir;
 
         if (IsRealDevice(entry))
         {
@@ -270,8 +271,9 @@ void SerialPort::EnumeratePorts()
                 entry.vendorId = matcher[1].str();
                 entry.productId = matcher[2].str();
             }
-
+#ifdef WITH_CP21DLL
             GetCP210xSerialNumber(entry);
+#endif
             GetFTDISerialNumber(entry);
 
             std::cout << entry.friendName  << "\r\n"
