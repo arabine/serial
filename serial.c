@@ -21,30 +21,42 @@
 int serial_setup(int fd, unsigned long speed)
 {
 #ifdef USE_WINDOWS_OS
-	COMMTIMEOUTS timeouts;
-	DCB dcb = {0};
-	HANDLE hCom = (HANDLE)fd;
 
-	dcb.DCBlength = sizeof(dcb);
+#define FC_DTRDSR       0x01
+#define FC_RTSCTS       0x02
+#define FC_XONXOFF      0x04
+#define ASCII_BEL       0x07
+#define ASCII_BS        0x08
+#define ASCII_LF        0x0A
+#define ASCII_CR        0x0D
+#define ASCII_XON       0x11
+#define ASCII_XOFF      0x13
 
-	dcb.BaudRate = speed;
-	dcb.ByteSize = 8;
-	dcb.Parity = NOPARITY;
-	dcb.StopBits = ONESTOPBIT;
+    COMMTIMEOUTS CommTimeOuts;
+    CommTimeOuts.ReadIntervalTimeout = 0xFFFFFFFF;
+    CommTimeOuts.ReadTotalTimeoutMultiplier = 0;
+    CommTimeOuts.ReadTotalTimeoutConstant = 0;
+    CommTimeOuts.WriteTotalTimeoutMultiplier = 0;
+    CommTimeOuts.WriteTotalTimeoutConstant = 5000;
+    SetCommTimeouts( fd, &CommTimeOuts );
 
-	if( !SetCommState(hCom, &dcb) ){
-		return -1;
-	}
+    DCB dcb;
+    dcb.DCBlength = sizeof( DCB );
+    GetCommState( fd, &dcb );
+    dcb.BaudRate = speed;
+    dcb.ByteSize = 8;
+    unsigned char ucSet;
+    ucSet = (unsigned char) ( ( FC_RTSCTS & FC_DTRDSR ) != 0 );
+    ucSet = (unsigned char) ( ( FC_RTSCTS & FC_RTSCTS ) != 0 );
+    ucSet = (unsigned char) ( ( FC_RTSCTS & FC_XONXOFF ) != 0 );
+    if( !SetCommState( fd, &dcb ) ||
+        !SetupComm( fd, 10000, 10000 ))
+    {
+        DWORD dwError = GetLastError();
 
-	timeouts.ReadIntervalTimeout = 100;
-	timeouts.ReadTotalTimeoutMultiplier = 10;
-	timeouts.ReadTotalTimeoutConstant = 100;
-	timeouts.WriteTotalTimeoutMultiplier = 10;
-	timeouts.WriteTotalTimeoutConstant = 100;
-
-	if (!SetCommTimeouts(hCom, &timeouts)) {
-		return -1;
-	}
+        CloseHandle( fd );
+        return( 1 );
+    }
 
 	return 0;
 #else
@@ -185,79 +197,30 @@ int serial_read(int fd, char *buf, int size, int timeout)
 	int len = 0;
 
 #ifdef USE_WINDOWS_OS
-	HANDLE hCom = (HANDLE)fd;
 
-	DWORD dwRead;
-	BOOL fWaitingOnRead = FALSE;
-	OVERLAPPED osReader = {0};
-	timeout = timeout * 1000; // in milliseconds
+    BOOL bReadStatus;
+    DWORD dwBytesRead, dwErrorFlags;
+    COMSTAT ComStat;
+    OVERLAPPED m_OverlappedRead;
+    memset( &m_OverlappedRead, 0, sizeof( OVERLAPPED ) );
+    m_OverlappedRead.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
 
-	// Create the overlapped event. Must be closed before exiting
-	// to avoid a handle leak.
-	osReader.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    ClearCommError( fd, &dwErrorFlags, &ComStat );
+    if( !ComStat.cbInQue ) return( 0 );
 
-	if (osReader.hEvent != NULL)
-	{
-	    if (!fWaitingOnRead)
-	    {
-	       // Issue read operation.
-	       if (!ReadFile(hCom, buf, size, &dwRead, &osReader))
-	       {
-	          if (GetLastError() != ERROR_IO_PENDING)     // read not delayed?
-	          {
-	             // Error in communications; report it.
-	          }
-	          else
-	          {
-	             fWaitingOnRead = TRUE;
-	          }
-	       }
-	       else
-	       {
-	          // read completed immediately
-	          len = dwRead;
-	        }
-	    }
+    dwBytesRead = (DWORD) ComStat.cbInQue;
+    if( size < (int) dwBytesRead ) dwBytesRead = (DWORD) size;
 
-	    if (fWaitingOnRead == TRUE)
-	    {
-            DWORD dwRes;
-            dwRes = WaitForSingleObject(osReader.hEvent, timeout);
-            switch(dwRes)
-            {
-              // Read completed.
-              case WAIT_OBJECT_0:
-                  if (!GetOverlappedResult(hCom, &osReader, &dwRead, FALSE))
-                  {
-                     // Error in communications; report it.
-                  }
-                  else
-                  {
-                     // Read completed successfully.
-                      len = dwRead;
-                  }
-
-                  //  Reset flag so that another opertion can be issued.
-                  fWaitingOnRead = FALSE;
-                  break;
-
-              case WAIT_TIMEOUT:
-                  // Operation isn't complete yet. fWaitingOnRead flag isn't
-                  // changed since I'll loop back around, and I don't want
-                  // to issue another read until the first one finishes.
-                  //
-                  // This is a good time to do some background work.
-                  len = 0;
-                  break;
-
-              default:
-                  // Error in the WaitForSingleObject; abort.
-                  // This indicates a problem with the OVERLAPPED structure's
-                  // event handle.
-                  break;
+    bReadStatus = ReadFile( fd, buf, dwBytesRead, &dwBytesRead, &m_OverlappedRead );
+    if( !bReadStatus ){
+        if( GetLastError() == ERROR_IO_PENDING ){
+            WaitForSingleObject( m_OverlappedRead.hEvent, 2000 );
+            return( (int) dwBytesRead );
             }
-	    }
-	}
+        return( 0 );
+        }
+
+    len = dwBytesRead;
 
 //	ret = ReadFile(hCom, buf, size, &bread, NULL);
 //
@@ -321,14 +284,16 @@ int serial_open(const char *port)
 		port = full_path;
 	}
 
-	hCom = CreateFileA(port, GENERIC_WRITE | GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
+    hCom = CreateFileA(port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL );
 
 	if( !hCom || hCom == INVALID_HANDLE_VALUE ) {
         printf("serial error %d\r\n", GetLastError());
 		fd = -1;
 	} else {
 		fd = (int)hCom;
-	}
+    }
+
+
 #else
 	fd = open(port, O_RDWR | O_NOCTTY | O_NONBLOCK | O_NDELAY);
 	if (fd == -1) {
