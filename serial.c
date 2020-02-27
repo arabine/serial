@@ -13,6 +13,7 @@
 #ifdef USE_WINDOWS_OS
 #else
 #include <unistd.h>     // for read/write
+#include <sys/ioctl.h>
 #endif
 #include <string.h>
 
@@ -251,9 +252,19 @@ int serial_read(int fd, char *buf, int size, int timeout)
 
     ret = select(maxfd, &readfs, NULL, NULL, &Timeout);
 
-    if (ret > 0)
+    if ((ret > 0) && FD_ISSET(fd, &readfs))
     {
-        if (FD_ISSET(fd, &readfs))
+        size_t read_len = 0;
+        ioctl(fd, FIONREAD, &read_len);
+       // errsv = errno;
+       //  printf("prog_name: zero read from the device: %s.", strerror(errsv));
+
+
+        if (read_len == 0)
+        {
+            len = -2; // error during read, maybe serial port was disconnected
+        }
+        else
         {
             ret = read(fd, buf, size);
             len = ret;
