@@ -116,8 +116,8 @@ int serial_setup(int fd, unsigned long speed)
 	t_opt.c_iflag &= ~(ICRNL | INLCR);
 	t_opt.c_oflag &= ~(OCRNL | ONLCR);
 	t_opt.c_oflag &= ~OPOST;
-	t_opt.c_cc[VMIN] = 1; // blocking read until N chars received
-	t_opt.c_cc[VTIME] = 10;
+    t_opt.c_cc[VMIN] = 1; // blocking read until N chars received
+    t_opt.c_cc[VTIME] = 1;
 
 #ifdef IS_DARWIN
 	if( tcsetattr(fd, TCSANOW, &t_opt) < 0 ) {
@@ -309,7 +309,7 @@ int serial_open(const char *port)
 
 
 #else
-	fd = open(port, O_RDWR | O_NOCTTY | O_NONBLOCK | O_NDELAY);
+    fd = open(port, O_RDWR | O_NOCTTY | O_NDELAY);
 	if (fd == -1) {
 		//fprintf(stderr, "Could not open serial port.\n");
 		return -1;
