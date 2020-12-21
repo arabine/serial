@@ -46,6 +46,7 @@ int serial_setup(int fd, unsigned long speed)
     GetCommState( fd, &dcb );
     dcb.BaudRate = speed;
     dcb.ByteSize = 8;
+    dcb.Parity = NOPARITY;
     unsigned char ucSet;
     ucSet = (unsigned char) ( ( FC_RTSCTS & FC_DTRDSR ) != 0 );
     ucSet = (unsigned char) ( ( FC_RTSCTS & FC_RTSCTS ) != 0 );
@@ -196,7 +197,7 @@ int serial_write(int fd, const char *buf, int size)
 }
 
 // timeout in seconds
-int serial_read(int fd, char *buf, int size, int timeout)
+int serial_read(int fd, char *buf, int max_size, int timeout)
 {
 	int len = 0;
 
@@ -212,17 +213,19 @@ int serial_read(int fd, char *buf, int size, int timeout)
     ClearCommError( fd, &dwErrorFlags, &ComStat );
     if( !ComStat.cbInQue ) return( 0 );
 
-    dwBytesRead = (DWORD) ComStat.cbInQue;
-    if( size < (int) dwBytesRead ) dwBytesRead = (DWORD) size;
+    dwBytesRead = 0;
+//    if( size < (int) dwBytesRead ) dwBytesRead = (DWORD) size;
 
-    bReadStatus = ReadFile( fd, buf, dwBytesRead, &dwBytesRead, &m_OverlappedRead );
-    if( !bReadStatus ){
-        if( GetLastError() == ERROR_IO_PENDING ){
-            WaitForSingleObject( m_OverlappedRead.hEvent, 2000 );
+    bReadStatus = ReadFile( fd, buf, max_size, &dwBytesRead, &m_OverlappedRead );
+    if( !bReadStatus )
+    {
+        if( GetLastError() == ERROR_IO_PENDING )
+        {
+            WaitForSingleObject( m_OverlappedRead.hEvent, timeout * 1000 );
             return( (int) dwBytesRead );
-            }
-        return( 0 );
         }
+        return( 0 );
+    }
 
     len = dwBytesRead;
 
