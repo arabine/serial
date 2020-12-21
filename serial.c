@@ -269,7 +269,7 @@ int serial_read(int fd, char *buf, int max_size, int timeout)
         }
         else
         {
-            ret = read(fd, buf, size);
+            ret = read(fd, buf, max_size);
             len = ret;
         }
     }
