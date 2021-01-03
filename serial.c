@@ -196,8 +196,8 @@ int serial_write(int fd, const char *buf, int size)
 	return ret;
 }
 
-// timeout in seconds
-int serial_read(int fd, char *buf, int max_size, int timeout)
+// timeout in milli-seconds
+int serial_read(int fd, char *buf, int size, int timeout)
 {
 	int len = 0;
 
@@ -247,8 +247,8 @@ int serial_read(int fd, char *buf, int max_size, int timeout)
     struct timeval Timeout;
 
     /* set timeout value within input loop */
-    Timeout.tv_usec = 0;  /* milliseconds */
-    Timeout.tv_sec  = timeout;  /* seconds */
+    Timeout.tv_usec = timeout * 1000;  /* milliseconds */
+    Timeout.tv_sec  = 0;  /* seconds */
 
     FD_ZERO(&readfs);
     FD_SET(fd, &readfs);  /* set testing for source 1 */
