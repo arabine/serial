@@ -197,7 +197,7 @@ int serial_write(int fd, const char *buf, int size)
 }
 
 // timeout in milli-seconds
-int serial_read(int fd, char *buf, int size, int timeout)
+int serial_read(int fd, char *buf, int max_size, int timeout)
 {
 	int len = 0;
 
