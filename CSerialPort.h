@@ -4,6 +4,10 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <chrono>
+#include "serial.h"
+
+#include "libserialport.h"
 
 struct SerialInfos
 {
@@ -59,21 +63,40 @@ public:
     void Close();
     std::int32_t Write(const uint8_t *data, uint32_t size);
     std::int32_t Write(const std::string &data);
-    std::int32_t Read(std::string &data, int32_t timeout_sec);
+    std::int32_t Read(std::string &data);
+    std::int32_t Read(std::string &data, const std::chrono::milliseconds &timeout_ms);
     bool IsOpen() const;
     std::string GetLastError();
     std::string GetLastSuccess();
 
-    int GetHandle() { return mFd; }
+//    SerialHandle GetHandle() { return mFd; }
 
     static void EnumeratePorts();
     static std::int32_t AssociatePort(const std::string &ident, std::string &portName);
     static std::vector<SerialInfos> GetList();
 
 private:
-    int mFd;
+//    SerialHandle mFd;
+
+    enum Mode {
+        MODE_BLOCKING,
+        MODE_NON_BLOCKING
+    };
+
+    struct sp_port *port = nullptr;
+    bool mIsOpen = false;
     std::string mLastError;
     std::string mLastSuccess;
+
+    Mode mMode = MODE_BLOCKING;
+    uint32_t mBaudrate = 9600;
+    uint32_t mDataBits = 8;
+    uint32_t mStopBits = 1;
+    enum sp_parity mParity;
+    enum sp_flowcontrol mFlowControl = SP_FLOWCONTROL_NONE;
+    uint32_t mReadEndOfFrame = 1000;
+    uint32_t mReadTimeout = 1000;
+
     char mBuffer[COM_PORT_BUF_SIZE];
 };
 

@@ -1,4 +1,4 @@
-#include "SerialPort.h"
+#include "CSerialPort.h"
 
 #include "Util.h"
 #include "serial.h"
@@ -8,7 +8,8 @@
 #include <locale.h>
 #include <regex>
 #include <iostream>
-
+#include <thread>
+#include <chrono>
 
 static std::vector<SerialInfos> gSerialList; // System list of com ports
 
@@ -21,7 +22,6 @@ static std::vector<SerialInfos> gSerialList; // System list of com ports
 #include <tchar.h>
 #include <initguid.h>
 #include <devpropdef.h>
-
 
 //static CPortsArray ports;
 
@@ -374,7 +374,7 @@ int32_t SerialPort::AssociatePort(const std::string &ident, std::string &portNam
 
 
 SerialPort::SerialPort()
-    : mFd(-1)
+//    : mFd(INVALID_HANDLE_VALUE)
 {
 
 }
@@ -391,31 +391,104 @@ std::int32_t SerialPort::Open(const std::string &ident, const std::string &param
     std::int32_t retCode = SerialPort::AssociatePort(ident, portName);
     if (retCode == cPortAssociated)
     {
-        mFd = serial_open(portName.c_str());
+        enum sp_return spRet;
+        spRet = sp_get_port_by_name(portName.data(), &port);
+        spRet = sp_open(port, SP_MODE_READ_WRITE);
+
+//        mFd = serial_open(portName.c_str());
+#ifdef USE_WINDOWS_OS
+//        if (mFd == INVALID_HANDLE_VALUE)
+#else
         if (mFd < 0)
+#endif
+        if (spRet != SP_OK)
         {
             mLastError = "Cannot open serial port: " + portName;
             retCode = cPortOpenError;
         }
         else
         {
+            mIsOpen = true;
             // Eg: 9600,8,N,1
             std::vector<std::string> paramList = Util::Split(params, ",");
-            if (paramList.size() == 4)
-            {
-                try {
-                    unsigned long baudrate = static_cast<unsigned long>(std::stol(paramList[0]));
-                    serial_setup(mFd, baudrate);
-                    mLastSuccess = "Setup serial port " + portName + " success at " + std::to_string(baudrate) + " bauds";
-                } catch (const std::exception & e) {
-                    mLastError = "Bad device parameters (expected integers): " +  params + ". Error: " + e.what();
+            try {
+                if (paramList.size() >= 1)
+                {
+                    mBaudrate = static_cast<unsigned long>(std::stol(paramList[0]));
+                    sp_set_baudrate(port, mBaudrate);
                 }
+
+                if (paramList.size() >= 2)
+                {
+                    mDataBits = static_cast<unsigned long>(std::stol(paramList[1]));
+                    sp_set_bits(port, mDataBits);
+                }
+
+                if (paramList.size() >= 3)
+                {
+                    mStopBits = static_cast<unsigned long>(std::stol(paramList[2]));
+                    sp_set_stopbits(port, mStopBits);
+                }
+
+                if (paramList.size() >= 4)
+                {
+                    if (paramList[3] == "N")
+                    {
+                        mParity = SP_PARITY_NONE;
+                    }
+                    else if (paramList[3] == "O")
+                    {
+                        mParity = SP_PARITY_ODD;
+                    }
+                    else if (paramList[3] == "E")
+                    {
+                        mParity = SP_PARITY_EVEN;
+                    }
+                    else if (paramList[3] == "M")
+                    {
+                        mParity = SP_PARITY_MARK;
+                    }
+                    else if (paramList[3] == "S")
+                    {
+                        mParity = SP_PARITY_SPACE;
+                    }
+                    sp_set_parity(port, mParity);
+                }
+
+                if (paramList.size() >= 5)
+                {
+                    if (paramList[4] == "noflow")
+                    {
+                        mFlowControl = SP_FLOWCONTROL_NONE;
+                    }
+                    // FIXME: gérer les autres types de flow
+                    sp_set_flowcontrol(port, mFlowControl);
+                }
+
+                if (paramList.size() >= 6)
+                {
+                    mReadTimeout = static_cast<unsigned long>(std::stol(paramList[5]));
+                    mReadEndOfFrame = static_cast<unsigned long>(std::stol(paramList[6]));
+                }
+
+                if (paramList.size() >= 8)
+                {
+                    if (paramList[7] == "blocking")
+                    {
+                        mMode = MODE_BLOCKING;
+                    }
+                    else if (paramList[7] == "nonblocking")
+                    {
+                        mMode = MODE_NON_BLOCKING;
+                    }
+                }
+            } catch (const std::exception & e) {
+                mLastError = "Bad device parameters (expected integers): " +  params + ". Error: " + e.what();
             }
-            else
-            {
-                mLastError = "Serial port parameter needs four comma separated parameters, eg: 9600,8,N,1. Got: " + params;
-                retCode = cPortBadParameters;
-            }
+
+            mLastSuccess = "Setup serial port " + portName + " success at " + std::to_string(mBaudrate) + " bauds";
+
+
         }
     }
     else
@@ -433,7 +506,14 @@ std::int32_t SerialPort::Open(const std::string &ident, const std::string &param
 
 void SerialPort::Close()
 {
-    mFd = serial_close(mFd);
+    if (mIsOpen && (port != nullptr))
+    {
+//    mFd = serial_close(mFd);
+    sp_close(port);
+    sp_free_port(port);
+    }
+    port = nullptr;
+    mIsOpen = false;
 }
 
 int32_t SerialPort::Write(const uint8_t *data, std::uint32_t size)
@@ -444,7 +524,15 @@ int32_t SerialPort::Write(const uint8_t *data, std::uint32_t size)
 int32_t SerialPort::Write(const std::string &data)
 {
     std::int32_t retCode = cPortWriteError;
-    if (mFd != -1)
+    enum sp_return spRet = sp_blocking_write(port,  data.c_str(), static_cast<int>(data.size()), mReadEndOfFrame);
+
+    if (spRet == data.size())
+    {
+        retCode = cPortWriteSuccess;
+    }
+    /*
+    std::int32_t retCode = cPortWriteError;
+    if (mFd != INVALID_HANDLE_VALUE)
     {
         std::int32_t ret = serial_write(mFd, data.c_str(), static_cast<int>(data.size()));
 
@@ -458,14 +546,86 @@ int32_t SerialPort::Write(const std::string &data)
         retCode = cPortNotOpen;
         mLastError = "Cannot write to serial port, not opened!";
     }
+    */
 
     return retCode;
 }
 
-int32_t SerialPort::Read(std::string &data, std::int32_t timeout_sec)
+int32_t SerialPort::Read(std::string &data)
+{
+    return Read(data, std::chrono::milliseconds(mReadTimeout));
+}
+
+int32_t SerialPort::Read(std::string &data, const std::chrono::milliseconds & timeout_ms)
 {
     std::int32_t retCode = cPortReadError;
-    if (mFd != -1)
+    enum sp_return spRet = SP_ERR_FAIL;
+
+    if (mMode == MODE_BLOCKING)
+    {
+        spRet = sp_blocking_read(port,  mBuffer, COM_PORT_BUF_SIZE, timeout_ms.count());
+    }
+    else
+    {
+        int total = 0;
+        bool hasData = false;
+        bool hasTimeout = false;
+        uint32_t timeout = 0;
+        uint32_t endOfFrame = 0;
+        do
+        {
+            int current = sp_input_waiting(port);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if ((current == total) && (total > 0))
+            {
+                endOfFrame++;
+                if (endOfFrame >= mReadEndOfFrame)
+                {
+                    hasData = true;
+                }
+            }
+            else
+            {
+                // new data arrived, reset timeout
+                endOfFrame = 0;
+                timeout = 0;
+            }
+
+            total = current;
+
+            if (total == 0)
+            {
+                timeout++;
+                if (timeout >= mReadTimeout)
+                {
+                    hasTimeout = true;
+                }
+            }
+        }
+        while((hasData == false) && (hasTimeout == false));
+
+        if (hasData && !hasTimeout)
+        {
+            spRet = sp_nonblocking_read(port, mBuffer, COM_PORT_BUF_SIZE);
+        }
+        else
+        {
+            spRet = SP_ERR_FAIL;
+        }
+    }
+
+    if (spRet > 0)
+    {
+        data.assign(mBuffer, static_cast<std::uint32_t>(spRet));
+        retCode = cPortReadSuccess;
+    }
+    else
+    {
+        retCode = cPortReadTimeout;
+    }
+/*
+    std::int32_t retCode = cPortReadError;
+    if (mFd != INVALID_HANDLE_VALUE)
     {
         std::int32_t ret = serial_read(mFd, mBuffer, COM_PORT_BUF_SIZE, timeout_sec);
 
@@ -484,15 +644,18 @@ int32_t SerialPort::Read(std::string &data, std::int32_t timeout_sec)
         retCode = cPortNotOpen;
         mLastError = "Cannot read to serial port, not opened!";
     }
-
+*/
     return retCode;
-
-
 }
 
 bool SerialPort::IsOpen() const
 {
+    return (port != nullptr) && mIsOpen;
+#ifdef USE_WINDOWS_OS
+//    return (mFd == INVALID_HANDLE_VALUE) ? false : true;
+#else
     return (mFd < 0) ? false : true;
+#endif
 }
 
 std::string SerialPort::GetLastError()

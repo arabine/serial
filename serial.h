@@ -22,14 +22,22 @@ extern "C" {
 #define B115200 115200
 #define B921600 921600
 
+
+typedef HANDLE SerialHandle;
+
 typedef long speed_t;
-#else // WIN32
+#else // LINUX
 
 #include <unistd.h>
 #include <termios.h>
 #include <sys/select.h>
 #include <sys/types.h>
 #include <sys/time.h>
+
+typedef int SerialHandle;
+#ifndef INVALID_HANDLE_VALUE
+#define INVALID_HANDLE_VALUE -1
+#endif
 
 #endif
 
@@ -42,11 +50,11 @@ typedef long speed_t;
 #define B921600  921600
 #endif
 
-int serial_setup(int fd, unsigned long speed);
-int serial_write(int fd, const char *buf, int size);
-int serial_read(int fd, char *buf, int max_size, int timeout);
-int serial_open(const char *port);
-int serial_close(int fd);
+int serial_setup(SerialHandle fd, unsigned long speed);
+int serial_write(SerialHandle fd, const char *buf, int size);
+int serial_read(SerialHandle fd, char *buf, int max_size, int timeout);
+SerialHandle serial_open(const char *port);
+SerialHandle serial_close(SerialHandle fd);
 
 #ifdef __cplusplus
 }

@@ -19,7 +19,7 @@
 
 #include "serial.h"
 
-int serial_setup(int fd, unsigned long speed)
+int serial_setup(SerialHandle fd, unsigned long speed)
 {
 #ifdef USE_WINDOWS_OS
 
@@ -34,11 +34,11 @@ int serial_setup(int fd, unsigned long speed)
 #define ASCII_XOFF      0x13
 
     COMMTIMEOUTS CommTimeOuts;
-    CommTimeOuts.ReadIntervalTimeout = 0xFFFFFFFF;
+    CommTimeOuts.ReadIntervalTimeout = MAXDWORD;
     CommTimeOuts.ReadTotalTimeoutMultiplier = 0;
     CommTimeOuts.ReadTotalTimeoutConstant = 0;
     CommTimeOuts.WriteTotalTimeoutMultiplier = 0;
-    CommTimeOuts.WriteTotalTimeoutConstant = 5000;
+    CommTimeOuts.WriteTotalTimeoutConstant = 0;
     SetCommTimeouts( fd, &CommTimeOuts );
 
     DCB dcb;
@@ -47,15 +47,27 @@ int serial_setup(int fd, unsigned long speed)
     dcb.BaudRate = speed;
     dcb.ByteSize = 8;
     dcb.Parity = NOPARITY;
-    unsigned char ucSet;
-    ucSet = (unsigned char) ( ( FC_RTSCTS & FC_DTRDSR ) != 0 );
-    ucSet = (unsigned char) ( ( FC_RTSCTS & FC_RTSCTS ) != 0 );
-    ucSet = (unsigned char) ( ( FC_RTSCTS & FC_XONXOFF ) != 0 );
+    dcb.StopBits          = ONESTOPBIT;   // 0,1,2 = 1, 1.5, 2
+
+    dcb.fBinary           = TRUE;         // Binary mode; no EOF check
+    dcb.fParity           = FALSE;        // Enable parity checking
+    dcb.fOutxCtsFlow      = FALSE;        // No CTS output flow control
+    dcb.fOutxDsrFlow      = FALSE;        // No DSR output flow control
+    dcb.fDtrControl       = DTR_CONTROL_DISABLE; // DTR flow control type
+    dcb.fDsrSensitivity   = FALSE;        // DSR sensitivity
+    dcb.fTXContinueOnXoff = FALSE;        // XOFF continues Tx
+    dcb.fOutX             = FALSE;        // No XON/XOFF out flow control
+    dcb.fInX              = FALSE;        // No XON/XOFF in flow control
+    dcb.fErrorChar        = FALSE;        // Disable error replacement
+    dcb.fNull             = FALSE;        // Disable null stripping
+    dcb.fRtsControl       = RTS_CONTROL_DISABLE; // RTS flow control
+    dcb.fAbortOnError     = FALSE;        // Do not abort reads/writes on error
+    dcb.EvtChar           = 0x7E;         // Flag
+
     if( !SetCommState( fd, &dcb ) ||
         !SetupComm( fd, 10000, 10000 ))
     {
-        DWORD dwError = GetLastError();
-
+        (void) GetLastError();
         CloseHandle( fd );
         return( 1 );
     }
@@ -134,11 +146,106 @@ int serial_setup(int fd, unsigned long speed)
 #endif
 }
 
-int serial_write(int fd, const char *buf, int size)
+
+
+int sendpckt(HANDLE hComm, unsigned length, const char * pckt)
+{
+    BOOL result;
+    DWORD dwCommEvent;
+    OVERLAPPED oWrite = { 0 };
+    DWORD errCode;
+
+    result = SetCommMask(hComm, EV_TXEMPTY);
+    if (!result) printf("Err: %d\n", (int)GetLastError());
+
+    result = WriteFile(hComm, pckt, length, NULL, &oWrite);
+    if (result == FALSE)
+    {
+        errCode = GetLastError();
+
+        if (errCode != ERROR_IO_PENDING)
+            printf("Error! Setting CommMask\n");
+    }
+
+    OVERLAPPED commOverlapped = { 0 };
+
+    commOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (commOverlapped.hEvent == NULL)
+        return FALSE; // Error creating overlapped event handle.
+
+    result = WaitCommEvent(hComm, &dwCommEvent, &commOverlapped);
+    if (!dwCommEvent)
+        printf("Error Setting WaitCommEvent()%d\n", (int) GetLastError());
+    else
+    {
+        // If WaitCommEvent() == TRUE then Read the received data
+        if (dwCommEvent & EV_TXEMPTY)
+        {
+            printf("Send complete.\n");
+        }
+
+    }
+
+    CloseHandle(oWrite.hEvent);
+    CloseHandle(commOverlapped.hEvent);
+
+    return 0;
+};
+    /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+int recvpckt(HANDLE hComm, char * pckt)
+{
+    BOOL result;
+    int len = 0;
+    OVERLAPPED oRead = { 0 };
+    DWORD errCode;
+    DWORD dwCommEvent;
+
+    result = SetCommMask(hComm, EV_RXCHAR);
+    if (!result) printf("Err: %d\n", (int)GetLastError());
+
+    result = ReadFile(hComm, pckt, 2048, NULL, &oRead);
+    if (result == FALSE)
+    {
+        errCode = GetLastError();
+
+        if (errCode != ERROR_IO_PENDING)
+            printf("nError! Setting CommMask\n");
+    }
+
+    OVERLAPPED commOverlapped = { 0 };
+
+    commOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (commOverlapped.hEvent == NULL)
+        return FALSE; // Error creating overlapped event handle.
+
+    result = WaitCommEvent(hComm, &dwCommEvent, &commOverlapped);
+    if (!dwCommEvent)
+        printf("Error Setting WaitCommEvent()%d\n", (int)GetLastError());
+    else
+    {
+        if (dwCommEvent & EV_TXEMPTY)
+        {
+            printf("Chars Recveived\n");
+            len = oRead.InternalHigh;
+        }
+
+    }
+
+    CloseHandle(oRead.hEvent);
+    CloseHandle(commOverlapped.hEvent);
+
+    return len;
+};
+
+
+int serial_write(SerialHandle fd, const char *buf, int size)
 {
 	int ret = -1;
 #ifdef USE_WINDOWS_OS
-	HANDLE hCom = (HANDLE)fd;
+
+
+    return sendpckt(fd, size, buf);
+    /*
 	unsigned long bwritten = 0;
 
     OVERLAPPED osWrite = {0};
@@ -149,7 +256,7 @@ int serial_write(int fd, const char *buf, int size)
     if (osWrite.hEvent != NULL)
     {
         // Issue write.
-        if (!WriteFile(hCom, buf, size, &bwritten, &osWrite))
+        if (!WriteFile(fd, buf, size, &bwritten, &osWrite))
         {
             if (GetLastError() == ERROR_IO_PENDING)
             {
@@ -159,7 +266,7 @@ int serial_write(int fd, const char *buf, int size)
                  {
                     // OVERLAPPED structure's event has been signaled.
                     case WAIT_OBJECT_0:
-                         if (GetOverlappedResult(hCom, &osWrite, &bwritten, FALSE))
+                         if (GetOverlappedResult(fd, &osWrite, &bwritten, FALSE))
                          {
                              ret = bwritten;
                          }
@@ -183,6 +290,7 @@ int serial_write(int fd, const char *buf, int size)
            ret = bwritten;
         }
     }
+            */
 
 #else
 	ret = write(fd, buf, size);
@@ -197,45 +305,93 @@ int serial_write(int fd, const char *buf, int size)
 }
 
 // timeout in seconds
-int serial_read(int fd, char *buf, int max_size, int timeout)
+int serial_read(SerialHandle fd, char *buf, int max_size, int timeout)
 {
 	int len = 0;
 
 #ifdef USE_WINDOWS_OS
+    DWORD dwRead;
+    BOOL fWaitingOnRead = FALSE;
+    OVERLAPPED osReader = {0};
 
-    BOOL bReadStatus;
-    DWORD dwBytesRead, dwErrorFlags;
-    COMSTAT ComStat;
-    OVERLAPPED m_OverlappedRead;
-    memset( &m_OverlappedRead, 0, sizeof( OVERLAPPED ) );
-    m_OverlappedRead.hEvent = CreateEvent( NULL, TRUE, FALSE, NULL );
 
-    ClearCommError( fd, &dwErrorFlags, &ComStat );
-    if( !ComStat.cbInQue ) return( 0 );
+    COMMTIMEOUTS commTimeout;
 
-    dwBytesRead = 0;
-//    if( size < (int) dwBytesRead ) dwBytesRead = (DWORD) size;
-
-    bReadStatus = ReadFile( fd, buf, max_size, &dwBytesRead, &m_OverlappedRead );
-    if( !bReadStatus )
+    if(GetCommTimeouts(fd, &commTimeout))
     {
-        if( GetLastError() == ERROR_IO_PENDING )
-        {
-            WaitForSingleObject( m_OverlappedRead.hEvent, timeout * 1000 );
-            return( (int) dwBytesRead );
-        }
-        return( 0 );
+        commTimeout.ReadIntervalTimeout     = 1000 * timeout;
+        commTimeout.ReadTotalTimeoutConstant     = 50;
+        commTimeout.ReadTotalTimeoutMultiplier     = 50;
+    }
+    else {
+        //Handle Error Condition
+    }
+    (void) SetCommTimeouts(fd, &commTimeout);
+
+    // Create the overlapped event. Must be closed before exiting
+    // to avoid a handle leak.
+    osReader.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+    if (osReader.hEvent == NULL) {
+       // Error creating overlapped event; abort.
+        return 0;
     }
 
-    len = dwBytesRead;
+    if (!fWaitingOnRead) {
+       // Issue read operation.
+       if (!ReadFile(fd, buf, max_size, &dwRead, &osReader)) {
+          if (GetLastError() != ERROR_IO_PENDING) {    // read not delayed?
+             // Error in communications; report it.
+              len = 0;
+          } else
+             fWaitingOnRead = TRUE;
+       }
+       else {
+          // read completed immediately
+          //HandleASuccessfulRead(lpBuf, dwRead);
+           len = dwRead;
+           fWaitingOnRead = TRUE;
+        }
+    }
 
-//	ret = ReadFile(hCom, buf, size, &bread, NULL);
-//
-//	if( ret == FALSE || ret==-1 ) {
-//		len = -1;
-//	} else {
-//		len = bread;
-//	}
+    DWORD dwRes;
+
+    if (fWaitingOnRead) {
+       dwRes = WaitForSingleObject(osReader.hEvent, timeout * 1000);
+       switch(dwRes)
+       {
+          // Read completed.
+          case WAIT_OBJECT_0:
+              if (!GetOverlappedResult(fd, &osReader, &dwRead, FALSE)) {
+                  len = 0;
+                 // Error in communications; report it.
+              } else {
+                 // Read completed successfully.
+                  len = dwRead;
+                // HandleASuccessfulRead(lpBuf, dwRead);
+              }
+              //  Reset flag so that another opertion can be issued.
+              fWaitingOnRead = FALSE;
+              break;
+
+          case WAIT_TIMEOUT:
+              // Operation isn't complete yet. fWaitingOnRead flag isn't
+              // changed since I'll loop back around, and I don't want
+              // to issue another read until the first one finishes.
+              //
+              // This is a good time to do some background work.
+                len = 0;
+              break;
+
+          default:
+              // Error in the WaitForSingleObject; abort.
+              // This indicates a problem with the OVERLAPPED structure's
+              // event handle.
+              break;
+       }
+    }
+
+    CloseHandle(osReader.hEvent);
 
 #else
     int ret = 0;
@@ -288,26 +444,26 @@ int serial_read(int fd, char *buf, int max_size, int timeout)
 	return len;
 }
 
-int serial_open(const char *port)
+SerialHandle serial_open(const char *port)
 {
-	int fd = -1;
+    SerialHandle fd = INVALID_HANDLE_VALUE;
 #ifdef USE_WINDOWS_OS
 	static char full_path[32] = {0};
-
-	HANDLE hCom = NULL;
 
 	if( port[0] != '\\' ) {
         _snprintf(full_path, sizeof(full_path) - 1, "\\\\.\\%s", port);
 		port = full_path;
 	}
 
-    hCom = CreateFileA(port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL );
+    fd = CreateFileA(port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL );
 
-	if( !hCom || hCom == INVALID_HANDLE_VALUE ) {
-        printf("serial error %d\r\n", GetLastError());
-		fd = -1;
-	} else {
-		fd = (int)hCom;
+    if( !fd || fd == INVALID_HANDLE_VALUE ) {
+        printf("serial error %d\r\n", (int)GetLastError());
+        fd = INVALID_HANDLE_VALUE;
+    } else {
+        if(!SetCommMask(fd, EV_RXCHAR)){ // set a mask for incoming characters event.
+            fd = INVALID_HANDLE_VALUE;
+        }
     }
 
 
@@ -325,14 +481,13 @@ int serial_open(const char *port)
 	return fd;
 }
 
-int serial_close(int fd)
+SerialHandle serial_close(SerialHandle fd)
 {
 #ifdef USE_WINDOWS_OS
-	HANDLE hCom = (HANDLE)fd;
 
-	CloseHandle(hCom);
+    CloseHandle(fd);
 #else
 	close(fd);
 #endif
-    return -1;
+    return INVALID_HANDLE_VALUE;
 }
