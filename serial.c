@@ -403,8 +403,8 @@ int serial_read(SerialHandle fd, char *buf, int max_size, int timeout)
     struct timeval Timeout;
 
     /* set timeout value within input loop */
-    Timeout.tv_usec = 0;  /* milliseconds */
-    Timeout.tv_sec  = timeout;  /* seconds */
+    Timeout.tv_usec = timeout * 1000;  /* milliseconds */
+    Timeout.tv_sec  = 0;  /* seconds */
 
     FD_ZERO(&readfs);
     FD_SET(fd, &readfs);  /* set testing for source 1 */
@@ -425,7 +425,7 @@ int serial_read(SerialHandle fd, char *buf, int max_size, int timeout)
         }
         else
         {
-            ret = read(fd, buf, size);
+            ret = read(fd, buf, max_size);
             len = ret;
         }
     }
