@@ -127,7 +127,7 @@ void GetFTDISerialNumber(SerialInfos &entry)
 #endif
 
 
-#ifdef USE_UNIX_OS
+#ifdef USE_LINUX_OS
 #include <stdlib.h>
 #include <dirent.h>
 #include <stdio.h>
@@ -304,7 +304,7 @@ void SerialPort::EnumeratePorts()
 
 #endif
 
-#ifdef USE_UNIX_OS
+#ifdef USE_LINUX_OS
     int n;
     struct dirent **namelist;
 
