@@ -75,6 +75,7 @@ private:
     std::string mLastError;
     std::string mLastSuccess;
     char mBuffer[COM_PORT_BUF_SIZE];
+    std::vector<std::string> Split(const std::string &theString, const std::string &delimiter);
 };
 
 #endif // SERIALPORT_H

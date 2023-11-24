@@ -1,6 +1,5 @@
 #include "SerialPort.h"
 
-#include "Util.h"
 #include "serial.h"
 
 #include <iomanip>
@@ -383,6 +382,26 @@ SerialPort::~SerialPort()
 
 }
 
+std::vector<std::string> SerialPort::Split(const std::string &theString, const std::string &delimiter)
+{
+    std::vector<std::string> theStringVector;
+    size_t  start = 0, end = 0;
+
+    while (end != std::string::npos)
+    {
+        end = theString.find(delimiter, start);
+
+        // If at end, use length=maxLength.  Else use length=end-start.
+        theStringVector.push_back(theString.substr(start,
+                                                   (end == std::string::npos) ? std::string::npos : end - start));
+
+        // If at end, use start=maxSize.  Else use start=end+delimiter.
+        start = ((end > (std::string::npos - delimiter.size()))
+                     ?  std::string::npos  :  end + delimiter.size());
+    }
+    return theStringVector;
+}
+
 std::int32_t SerialPort::Open(const std::string &ident, const std::string &params)
 {
     std::string portName;
@@ -399,7 +418,7 @@ std::int32_t SerialPort::Open(const std::string &ident, const std::string &param
         else
         {
             // Eg: 9600,8,N,1
-            std::vector<std::string> paramList = Util::Split(params, ",");
+            std::vector<std::string> paramList = Split(params, ",");
             if (paramList.size() == 4)
             {
                 try {
